@@ -1,0 +1,5 @@
+Time: 2025-08-02 12:36:55.787956
+Client Schema: client1
+File: cust_info.json
+Error Type: Mapping Validation
+Details: {'sales', 'tanggal', 'csv_row_number', 'source_file', 'produk', 'order_id'}
