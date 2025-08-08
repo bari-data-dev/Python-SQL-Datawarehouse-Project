@@ -136,7 +136,19 @@ CREATE TABLE IF NOT EXISTS tools.transformation_log
 )
 
 
+CREATE TABLE tools.transformation_config (
+    id BIGSERIAL PRIMARY KEY,
+    client_schema TEXT NOT NULL,                -- contoh: 'client1', 'client2'
+    transform_version VARCHAR(50) NOT NULL,     -- versi konfigurasi transformasi, fleksibel
+    proc_name TEXT NOT NULL,                    -- contoh: 'tools.transform_orders_client1'
+    is_active BOOLEAN DEFAULT TRUE,             -- bisa nonaktifkan tanpa hapus
+    created_at TIMESTAMP DEFAULT NOW(),
+    created_by TEXT DEFAULT current_user
+);
 
+-- Index untuk mempercepat lookup
+CREATE INDEX idx_transformation_config_schema_version
+    ON tools.transformation_config (client_schema, transform_version);
 
 
 
