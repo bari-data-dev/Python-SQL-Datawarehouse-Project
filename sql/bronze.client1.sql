@@ -68,7 +68,7 @@ DO $$
 DECLARE
     tbl RECORD;
     col_name TEXT := 'dwh_batch_id';
-    col_type TEXT := 'VARCHAR(255)';
+    col_type TEXT := 'VARCHAR(30)';
 BEGIN
     FOR tbl IN
         SELECT table_name
