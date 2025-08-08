@@ -23,6 +23,7 @@ DB_CONFIG = {
 
 EXCLUDE_KEYS = {"csv_row_number", "source_file", "logical_source_file", "batch_id"}
 
+
 def log_job_execution(cursor, job_name, client_schema, file_name, batch_id, status, start_time, error_message=None):
     cursor.execute("""
         INSERT INTO tools.job_execution_log (
@@ -33,12 +34,14 @@ def log_job_execution(cursor, job_name, client_schema, file_name, batch_id, stat
         start_time, datetime.now(), error_message
     ))
 
+
 def update_file_audit_log(cursor, client_schema, json_file_name, batch_id, status):
     cursor.execute("""
         UPDATE tools.file_audit_log
         SET load_status = %s
         WHERE client_schema = %s AND json_file_name = %s AND batch_id = %s
     """, (status, client_schema, json_file_name, batch_id))
+
 
 def log_error_record(cursor, client_schema, batch_id, logical_source_file, file_name, record, error_msg):
     cursor.execute("""
@@ -49,6 +52,7 @@ def log_error_record(cursor, client_schema, batch_id, logical_source_file, file_
         client_schema, batch_id, logical_source_file, file_name,
         error_msg, json.dumps(record), datetime.now()
     ))
+
 
 def get_reference_versions(cursor, client_schema):
     cursor.execute("""
@@ -61,6 +65,7 @@ def get_reference_versions(cursor, client_schema):
         raise Exception(f"client_schema '{client_schema}' tidak ditemukan di client_reference")
     return row[0], row[1]
 
+
 def get_target_table(cursor, client_schema, logical_source_file, config_version):
     cursor.execute("""
         SELECT target_schema, target_table
@@ -71,6 +76,7 @@ def get_target_table(cursor, client_schema, logical_source_file, config_version)
     if not row:
         raise Exception(f"Config untuk file '{logical_source_file}' tidak ditemukan di client_config")
     return row[0], row[1]
+
 
 def get_column_mapping(cursor, client_schema, logical_source_file, mapping_version):
     cursor.execute("""
@@ -83,10 +89,27 @@ def get_column_mapping(cursor, client_schema, logical_source_file, mapping_versi
         raise Exception(f"Column mapping tidak ditemukan untuk file '{logical_source_file}'")
     return {source: target for source, target in rows}
 
+
+def ensure_dwh_batch_id_column(cursor, target_schema, target_table):
+    """Pastikan kolom dwh_batch_id ada di tabel, jika tidak tambahkan."""
+    cursor.execute("""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = %s AND table_name = %s AND column_name = 'dwh_batch_id'
+    """, (target_schema, target_table))
+    if cursor.fetchone() is None:
+        print(f"ℹ️ Menambahkan kolom dwh_batch_id ke {target_schema}.{target_table}")
+        cursor.execute(f"""
+            ALTER TABLE {target_schema}.{target_table}
+            ADD COLUMN dwh_batch_id VARCHAR(255)
+        """)
+
+
 def clean_value(val):
     if isinstance(val, str) and val.strip() == "":
         return None
     return val
+
 
 def rename_and_clean_record(record, column_map):
     return {
@@ -94,6 +117,7 @@ def rename_and_clean_record(record, column_map):
         for k, v in record.items()
         if k in column_map and k not in EXCLUDE_KEYS
     }
+
 
 def main(client_schema, json_file_name):
     start_time = datetime.now()
@@ -118,17 +142,24 @@ def main(client_schema, json_file_name):
                 target_schema, target_table = get_target_table(cursor, client_schema, logical_source_file, config_version)
                 column_map = get_column_mapping(cursor, client_schema, logical_source_file, mapping_version)
 
+                # Pastikan kolom dwh_batch_id ada
+                ensure_dwh_batch_id_column(cursor, target_schema, target_table)
+
                 # Clean & map
                 cleaned_data = []
                 for row in records:
                     try:
                         cleaned_row = rename_and_clean_record(row, column_map)
+                        cleaned_row["dwh_batch_id"] = batch_id  # tambahkan batch_id ke data
                         cleaned_data.append(cleaned_row)
                     except Exception as e:
                         log_error_record(cursor, client_schema, batch_id, logical_source_file, json_file_name, row, str(e))
 
                 if not cleaned_data:
                     raise Exception("Semua record gagal diproses")
+
+                # DELETE existing data for this batch_id before insert
+                cursor.execute(f"DELETE FROM {target_schema}.{target_table} WHERE dwh_batch_id = %s", (batch_id,))
 
                 # Bulk insert
                 columns = list(cleaned_data[0].keys())
@@ -150,12 +181,17 @@ def main(client_schema, json_file_name):
                 try:
                     update_file_audit_log(cursor, client_schema, json_file_name, batch_id, "FAILED")
                 except:
-                    pass  # In case batch_id is still None
-                log_job_execution(cursor, job_name, client_schema, json_file_name, batch_id if 'batch_id' in locals() else None, "FAILED", start_time, str(e))
+                    pass
+                log_job_execution(
+                    cursor, job_name, client_schema, json_file_name,
+                    batch_id if 'batch_id' in locals() else None,
+                    "FAILED", start_time, str(e)
+                )
         print(f"❌ Gagal memproses file '{json_file_name}': {e}")
         sys.exit(1)
 
     print(f"✅ Berhasil load file '{json_file_name}' ke {target_schema}.{target_table}")
+
 
 # ----------------------#
 # 🚀 Main Entry Point   #
