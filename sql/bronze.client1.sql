@@ -62,3 +62,23 @@ CREATE TABLE bronze_client1.erp_px_cat_g1v2 (
     subcat       VARCHAR(50),
     maintenance  VARCHAR(50)
 );
+
+
+DO $$
+DECLARE
+    tbl RECORD;
+    col_name TEXT := 'dwh_batch_id';
+    col_type TEXT := 'VARCHAR(255)';
+BEGIN
+    FOR tbl IN
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'bronze'
+          AND table_type = 'BASE TABLE'
+    LOOP
+        EXECUTE format(
+            'ALTER TABLE bronze.%I ADD COLUMN IF NOT EXISTS %I %s;',
+            tbl.table_name, col_name, col_type
+        );
+    END LOOP;
+END$$;
