@@ -24,66 +24,81 @@ DB_CONFIG = {
 EXCLUDE_KEYS = {"csv_row_number", "source_file", "logical_source_file", "batch_id"}
 
 
-def log_job_execution(cursor, job_name, client_schema, file_name, batch_id, status, start_time, error_message=None):
+# ----------------------#
+# Helper DB Functions   #
+# ----------------------#
+def get_client_id(cursor, client_schema):
     cursor.execute("""
-        INSERT INTO tools.job_execution_log (
-            job_name, client_schema, file_name, batch_id, status, start_time, end_time, error_message
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-    """, (
-        job_name, client_schema, file_name, batch_id, status,
-        start_time, datetime.now(), error_message
-    ))
-
-
-def update_file_audit_log(cursor, client_schema, json_file_name, batch_id, status):
-    cursor.execute("""
-        UPDATE tools.file_audit_log
-        SET load_status = %s
-        WHERE client_schema = %s AND json_file_name = %s AND batch_id = %s
-    """, (status, client_schema, json_file_name, batch_id))
-
-
-def log_error_record(cursor, client_schema, batch_id, logical_source_file, file_name, record, error_msg):
-    cursor.execute("""
-        INSERT INTO tools.load_error_log (
-            client_schema, batch_id, logical_source_file, file_name, error_message, raw_data, error_time
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """, (
-        client_schema, batch_id, logical_source_file, file_name,
-        error_msg, json.dumps(record), datetime.now()
-    ))
-
-
-def get_reference_versions(cursor, client_schema):
-    cursor.execute("""
-        SELECT mapping_version, config_version
+        SELECT client_id
         FROM tools.client_reference
         WHERE client_schema = %s
     """, (client_schema,))
     row = cursor.fetchone()
     if not row:
         raise Exception(f"client_schema '{client_schema}' tidak ditemukan di client_reference")
+    return row[0]
+
+
+def log_job_execution(cursor, job_name, client_id, file_name, batch_id, status, start_time, error_message=None):
+    cursor.execute("""
+        INSERT INTO tools.job_execution_log (
+            job_name, client_id, file_name, batch_id, status, start_time, end_time, error_message
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    """, (
+        job_name, client_id, file_name, batch_id, status,
+        start_time, datetime.now(), error_message
+    ))
+
+
+def update_file_audit_log(cursor, client_id, json_file_name, batch_id, status):
+    cursor.execute("""
+        UPDATE tools.file_audit_log
+        SET load_status = %s
+        WHERE client_id = %s AND json_file_name = %s AND batch_id = %s
+    """, (status, client_id, json_file_name, batch_id))
+
+
+def log_error_record(cursor, client_id, batch_id, logical_source_file, file_name, record, error_msg):
+    cursor.execute("""
+        INSERT INTO tools.load_error_log (
+            client_id, batch_id, logical_source_file, file_name, error_message, raw_data, error_time
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """, (
+        client_id, batch_id, logical_source_file, file_name,
+        error_msg, json.dumps(record), datetime.now()
+    ))
+
+
+def get_reference_versions(cursor, client_id):
+    cursor.execute("""
+        SELECT mapping_version, config_version
+        FROM tools.client_reference
+        WHERE client_id = %s
+    """, (client_id,))
+    row = cursor.fetchone()
+    if not row:
+        raise Exception(f"client_id '{client_id}' tidak ditemukan di client_reference")
     return row[0], row[1]
 
 
-def get_target_table(cursor, client_schema, logical_source_file, config_version):
+def get_target_table(cursor, client_id, logical_source_file, config_version):
     cursor.execute("""
         SELECT target_schema, target_table
         FROM tools.client_config
-        WHERE client_schema = %s AND logical_source_file = %s AND config_version = %s
-    """, (client_schema, logical_source_file, config_version))
+        WHERE client_id = %s AND logical_source_file = %s AND config_version = %s
+    """, (client_id, logical_source_file, config_version))
     row = cursor.fetchone()
     if not row:
         raise Exception(f"Config untuk file '{logical_source_file}' tidak ditemukan di client_config")
     return row[0], row[1]
 
 
-def get_column_mapping(cursor, client_schema, logical_source_file, mapping_version):
+def get_column_mapping(cursor, client_id, logical_source_file, mapping_version):
     cursor.execute("""
         SELECT source_column, target_column
         FROM tools.column_mapping
-        WHERE client_schema = %s AND logical_source_file = %s AND mapping_version = %s
-    """, (client_schema, logical_source_file, mapping_version))
+        WHERE client_id = %s AND logical_source_file = %s AND mapping_version = %s
+    """, (client_id, logical_source_file, mapping_version))
     rows = cursor.fetchall()
     if not rows:
         raise Exception(f"Column mapping tidak ditemukan untuk file '{logical_source_file}'")
@@ -119,6 +134,9 @@ def rename_and_clean_record(record, column_map):
     }
 
 
+# ----------------------#
+# Main Processing Logic #
+# ----------------------#
 def main(client_schema, json_file_name):
     start_time = datetime.now()
     job_name = "load_to_bronze"
@@ -137,10 +155,13 @@ def main(client_schema, json_file_name):
 
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cursor:
-                # Get config
-                mapping_version, config_version = get_reference_versions(cursor, client_schema)
-                target_schema, target_table = get_target_table(cursor, client_schema, logical_source_file, config_version)
-                column_map = get_column_mapping(cursor, client_schema, logical_source_file, mapping_version)
+                # Translate schema -> client_id
+                client_id = get_client_id(cursor, client_schema)
+
+                # Get config & mapping
+                mapping_version, config_version = get_reference_versions(cursor, client_id)
+                target_schema, target_table = get_target_table(cursor, client_id, logical_source_file, config_version)
+                column_map = get_column_mapping(cursor, client_id, logical_source_file, mapping_version)
 
                 # Pastikan kolom dwh_batch_id ada
                 ensure_dwh_batch_id_column(cursor, target_schema, target_table)
@@ -150,10 +171,10 @@ def main(client_schema, json_file_name):
                 for row in records:
                     try:
                         cleaned_row = rename_and_clean_record(row, column_map)
-                        cleaned_row["dwh_batch_id"] = batch_id  # tambahkan batch_id ke data
+                        cleaned_row["dwh_batch_id"] = batch_id
                         cleaned_data.append(cleaned_row)
                     except Exception as e:
-                        log_error_record(cursor, client_schema, batch_id, logical_source_file, json_file_name, row, str(e))
+                        log_error_record(cursor, client_id, batch_id, logical_source_file, json_file_name, row, str(e))
 
                 if not cleaned_data:
                     raise Exception("Semua record gagal diproses")
@@ -171,22 +192,28 @@ def main(client_schema, json_file_name):
                 execute_values(cursor, insert_sql, values)
 
                 # Success log
-                update_file_audit_log(cursor, client_schema, json_file_name, batch_id, "SUCCESS")
-                log_job_execution(cursor, job_name, client_schema, json_file_name, batch_id, "SUCCESS", start_time)
+                update_file_audit_log(cursor, client_id, json_file_name, batch_id, "SUCCESS")
+                log_job_execution(cursor, job_name, client_id, json_file_name, batch_id, "SUCCESS", start_time)
 
     except Exception as e:
         # Failure log
         with psycopg2.connect(**DB_CONFIG) as conn:
             with conn.cursor() as cursor:
                 try:
-                    update_file_audit_log(cursor, client_schema, json_file_name, batch_id, "FAILED")
+                    client_id = get_client_id(cursor, client_schema)
+                    update_file_audit_log(cursor, client_id, json_file_name, batch_id, "FAILED")
                 except:
                     pass
-                log_job_execution(
-                    cursor, job_name, client_schema, json_file_name,
-                    batch_id if 'batch_id' in locals() else None,
-                    "FAILED", start_time, str(e)
-                )
+                try:
+                    log_job_execution(
+                        cursor, job_name,
+                        client_id if 'client_id' in locals() else None,
+                        json_file_name,
+                        batch_id if 'batch_id' in locals() else None,
+                        "FAILED", start_time, str(e)
+                    )
+                except:
+                    pass
         print(f"❌ Gagal memproses file '{json_file_name}': {e}")
         sys.exit(1)
 
