@@ -14,35 +14,47 @@ load_dotenv()
 def validate_client_name(client: str) -> bool:
     return re.match(r"^[a-z0-9_]+$", client) is not None
 
-def get_logical_source_files(conn, client_schema):
+def get_client_id(conn, client_schema):
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT client_id
+            FROM tools.client_reference
+            WHERE client_schema = %s
+        """, (client_schema,))
+        row = cur.fetchone()
+        if not row:
+            raise ValueError(f"Client schema '{client_schema}' tidak ditemukan di client_reference.")
+        return row[0]
+
+def get_logical_source_files(conn, client_id):
     with conn.cursor() as cur:
         cur.execute("""
             SELECT cc.logical_source_file
             FROM tools.client_config cc
             JOIN tools.client_reference cr 
-              ON cc.client_schema = cr.client_schema 
+              ON cc.client_id = cr.client_id
              AND cc.config_version = cr.config_version
-            WHERE cc.client_schema = %s 
+            WHERE cc.client_id = %s 
               AND cc.is_active = true
-        """, (client_schema,))
+        """, (client_id,))
         return set(row[0].lower() for row in cur.fetchall())
 
 def extract_batch_id(file_name: str) -> str:
     match = re.search(r"_?(BATCH\d{6})", file_name, re.IGNORECASE)
     if not match:
-        raise ValueError(f"Batch ID not found in filename: {file_name}")
+        raise ValueError(f"Batch ID tidak ditemukan di filename: {file_name}")
     return match.group(1).upper()
 
 def insert_file_audit_log(conn, **kwargs):
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO tools.file_audit_log (
-                client_schema, logical_source_file, physical_file_name, json_file_name,
+                client_id, logical_source_file, physical_file_name, json_file_name,
                 file_received_time, json_converted_time, total_rows,
                 convert_status, processed_by, batch_id
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
-            kwargs["client_schema"],
+            kwargs["client_id"],
             kwargs["logical_source_file"],
             kwargs["physical_file_name"],
             kwargs["json_file_name"],
@@ -55,27 +67,27 @@ def insert_file_audit_log(conn, **kwargs):
         ))
     conn.commit()
 
-def insert_job_execution_log(conn, client_schema, file_name, status, error_message=None, batch_id=None):
+def insert_job_execution_log(conn, client_id, file_name, status, error_message=None, batch_id=None):
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO tools.job_execution_log (
-                job_name, client_schema, file_name, status, start_time, end_time, error_message, batch_id
+                job_name, client_id, file_name, status, start_time, end_time, error_message, batch_id
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
-            "csv_to_json.py", client_schema, file_name, status,
+            "csv_to_json.py", client_id, file_name, status,
             datetime.now(), datetime.now(), error_message, batch_id
         ))
     conn.commit()
 
-def convert_csv_to_json(client, file_name):
-    if not validate_client_name(client):
-        print("❌ Nama client tidak valid.")
+def convert_csv_to_json(client_schema, file_name):
+    if not validate_client_name(client_schema):
+        print("❌ Nama client schema tidak valid.")
         return
 
-    client = client.lower()
-    input_dir = os.path.join("raw", client, "incoming")
-    failed_dir = os.path.join("raw", client, "failed")
-    output_dir = os.path.join("data", client, "incoming")
+    client_schema = client_schema.lower()
+    input_dir = os.path.join("raw", client_schema, "incoming")
+    failed_dir = os.path.join("raw", client_schema, "failed")
+    output_dir = os.path.join("data", client_schema, "incoming")
 
     for path in [output_dir, failed_dir]:
         os.makedirs(path, exist_ok=True)
@@ -99,7 +111,14 @@ def convert_csv_to_json(client, file_name):
         print(f"❌ Gagal koneksi DB: {e}")
         return
 
-    logical_sources = get_logical_source_files(conn, client)
+    try:
+        client_id = get_client_id(conn, client_schema)
+    except ValueError as e:
+        print(f"❌ {e}")
+        conn.close()
+        return
+
+    logical_sources = get_logical_source_files(conn, client_id)
 
     base_name = os.path.splitext(file_name)[0].lower()
     json_file = file_name.replace(".csv", ".json")
@@ -114,7 +133,7 @@ def convert_csv_to_json(client, file_name):
 
     if not matched_logical_file:
         print(f"⛔ {file_name} tidak cocok logical_source_file")
-        insert_job_execution_log(conn, client, file_name, "FAILED",
+        insert_job_execution_log(conn, client_id, file_name, "FAILED",
                                  f"logical_source_file not found: {base_name}",
                                  batch_id=batch_id)
         shutil.move(file_path, os.path.join(failed_dir, file_name))
@@ -142,7 +161,7 @@ def convert_csv_to_json(client, file_name):
 
         insert_file_audit_log(
             conn=conn,
-            client_schema=client,
+            client_id=client_id,
             logical_source_file=matched_logical_file,
             physical_file_name=file_name,
             json_file_name=json_file,
@@ -153,14 +172,14 @@ def convert_csv_to_json(client, file_name):
             batch_id=batch_id
         )
 
-        insert_job_execution_log(conn, client, file_name, "SUCCESS", batch_id=batch_id)
+        insert_job_execution_log(conn, client_id, file_name, "SUCCESS", batch_id=batch_id)
 
     except Exception as e:
         print(f"❌ Gagal proses {file_name}: {e}")
         insert_file_audit_log(
             conn=conn,
-            client_schema=client,
-            logical_source_file=matched_logical_file,
+            client_id=client_id,
+            logical_source_file=matched_logical_file if 'matched_logical_file' in locals() else None,
             physical_file_name=file_name,
             json_file_name=json_file,
             file_received_time=file_received_time,
@@ -169,7 +188,7 @@ def convert_csv_to_json(client, file_name):
             convert_status="FAILED",
             batch_id=batch_id
         )
-        insert_job_execution_log(conn, client, file_name, "FAILED", str(e), batch_id=batch_id)
+        insert_job_execution_log(conn, client_id, file_name, "FAILED", str(e), batch_id=batch_id)
         shutil.move(file_path, os.path.join(failed_dir, file_name))
         print(f"📁 Dipindahkan ke: {failed_dir}")
 
@@ -177,7 +196,7 @@ def convert_csv_to_json(client, file_name):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("client", help="Nama client, contoh: client1")
+    parser.add_argument("client", help="Nama client schema, contoh: client1")
     parser.add_argument("csv_file", help="Nama file CSV, contoh: cust-info_BATCH000002.csv")
     args = parser.parse_args()
 
