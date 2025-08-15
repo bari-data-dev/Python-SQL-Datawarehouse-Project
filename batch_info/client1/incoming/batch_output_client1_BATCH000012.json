@@ -1,0 +1,12 @@
+{
+  "client_schema": "client1",
+  "batch_id": "BATCH000012",
+  "files": [
+    "CUST_AZ12_BATCH000012.csv",
+    "cust_info_BATCH000012.csv",
+    "LOC_A101_BATCH000012.csv",
+    "prd_info_BATCH000012.csv",
+    "PX_CAT_G1V2_BATCH000012.csv",
+    "sales_details_BATCH000012.csv"
+  ]
+}
