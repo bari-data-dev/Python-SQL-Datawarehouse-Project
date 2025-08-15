@@ -70,20 +70,28 @@ def insert_job_execution_log(conn, job_name, client_id, status, start_time, end_
     conn.commit()
 
 
-def run_procedure(proc_name, client_schema, batch_id, client_id, conn):
-    with conn.cursor() as cur:
-        print(f"Menjalankan procedure: {proc_name}({client_schema}, {batch_id}, {client_id})")
-        cur.execute(f"CALL {proc_name}(%s, %s, %s, %s, %s);",
-                    (client_schema, batch_id, client_id, None, None))
-        result = cur.fetchone()
-        if result:
-            is_success, error_message = result
+def run_procedure(proc_name, client_schema, batch_id, client_id):
+    proc_conn = None
+    try:
+        proc_conn = psycopg2.connect(**DB_CONFIG)
+        proc_conn.autocommit = True  # penting untuk hindari error set_session
+        with proc_conn.cursor() as cur:
+            print(f"Menjalankan procedure: {proc_name}({client_schema}, {batch_id})")
+            cur.execute(f"CALL {proc_name}(%s, %s, %s, %s);",
+                        (client_schema, batch_id, None, None))
+            result = cur.fetchone()
+            if result:
+                is_success, error_message = result
+            else:
+                is_success, error_message = True, None
             print(f"  is_success: {is_success}")
             print(f"  error_message: {error_message}")
             return is_success, error_message
-        else:
-            print("  Procedure selesai, tapi tidak ada output OUT params")
-            return True, None
+    except Exception as e:
+        return False, str(e)
+    finally:
+        if proc_conn:
+            proc_conn.close()
 
 
 def move_file(src_path, client_schema, status):
@@ -99,17 +107,16 @@ def move_file(src_path, client_schema, status):
 
 def main():
     load_dotenv()
-
     if len(sys.argv) < 2:
         print("Usage: python silver_clean_transform.py <client_schema>")
         sys.exit(1)
 
     client_schema = sys.argv[1]
-
     DB_PORT = os.getenv("DB_PORT")
     if DB_PORT is None:
         raise ValueError("DB_PORT not set in .env")
 
+    global DB_CONFIG
     DB_CONFIG = {
         'host': os.getenv('DB_HOST'),
         'port': int(DB_PORT),
@@ -133,36 +140,39 @@ def main():
     start_time = datetime.now()
 
     conn = psycopg2.connect(**DB_CONFIG)
-
     try:
         with conn.cursor() as cur:
             client_id = get_client_id(cur, client_schema)
-
         transform_version = get_transform_version(client_id, conn)
         print(f"Transform version untuk client '{client_schema}' (client_id={client_id}): {transform_version}")
 
         proc_names = get_active_procs(client_id, transform_version, conn)
 
+        all_success = True
+        error_messages = []
+
         for proc_name in proc_names:
-            is_success, error_message = run_procedure(proc_name,client_schema, batch_id, client_id, conn)
+            is_success, error_message = run_procedure(proc_name, client_schema, batch_id, client_id)
             if not is_success:
-                end_time = datetime.now()
-                log_msg = f"Procedure {proc_name} gagal dengan pesan: {error_message}"
-                insert_job_execution_log(conn, job_name, client_id, "FAILED", start_time, end_time, log_msg, file_name, batch_id)
-                print(log_msg)
-                conn.rollback()
-                move_file(file_path, client_schema, "FAILED")
-                sys.exit(1)
+                all_success = False
+                error_messages.append(f"{proc_name} gagal: {error_message}")
 
         end_time = datetime.now()
-        insert_job_execution_log(conn, job_name, client_id, "SUCCESS", start_time, end_time, None, file_name, batch_id)
+        final_error_msg = "\n".join(error_messages) if error_messages else None
 
-        conn.commit()
-        move_file(file_path, client_schema, "SUCCESS")
+        if all_success:
+            insert_job_execution_log(conn, job_name, client_id, "SUCCESS", start_time, end_time, None, file_name, batch_id)
+            conn.commit()
+            move_file(file_path, client_schema, "SUCCESS")
+        else:
+            insert_job_execution_log(conn, job_name, client_id, "FAILED", start_time, end_time, final_error_msg, file_name, batch_id)
+            conn.commit()
+            move_file(file_path, client_schema, "FAILED")
 
     except Exception as e:
         end_time = datetime.now()
-        insert_job_execution_log(conn, job_name, client_id if 'client_id' in locals() else None, "FAILED", start_time, end_time, str(e), file_name, batch_id)
+        insert_job_execution_log(conn, job_name, client_id if 'client_id' in locals() else None,
+                                 "FAILED", start_time, end_time, str(e), file_name, batch_id)
         print(f"Error: {e}")
         conn.rollback()
         move_file(file_path, client_schema, "FAILED")
