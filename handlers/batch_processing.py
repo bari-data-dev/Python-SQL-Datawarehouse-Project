@@ -67,7 +67,7 @@ def get_client_id(cur, client_schema):
 # =============================
 # Insert satu log untuk seluruh batch
 # =============================
-def log_batch_status(client_id, status, batch_id, client_schema, error_message=None, start_time=None, ):
+def log_batch_status(client_id, status, batch_id, error_message=None, start_time=None):
     conn = get_connection()
     cur = conn.cursor()
     now = datetime.now()
@@ -82,7 +82,7 @@ def log_batch_status(client_id, status, batch_id, client_schema, error_message=N
         start_time or now,
         now,
         error_message,
-        client_schema,
+        None,
         batch_id
     ))
     conn.commit()
@@ -102,7 +102,7 @@ def process_client(client_schema, mode):
 
         # Pastikan direktori batch_info/<client> lengkap
         os.makedirs(f"batch_info/{client_schema}/incoming", exist_ok=True)
-        os.makedirs(f"batch_info/{client_schema}/success", exist_ok=True)
+        os.makedirs(f"batch_info/{client_schema}/archive", exist_ok=True)
         os.makedirs(f"batch_info/{client_schema}/failed", exist_ok=True)
 
         # Ambil last_batch_id
@@ -159,8 +159,8 @@ def process_client(client_schema, mode):
                         shutil.move(f"raw/{client_schema}/incoming/{file_name}", f"raw/{client_schema}/failed/{file_name}")
                         raise Exception("FAILED on csv_to_json")
 
-                    # Pindah file CSV ke success
-                    shutil.move(f"raw/{client_schema}/incoming/{file_name}", f"raw/{client_schema}/success/{file_name}")
+                    # Pindah file CSV ke archive
+                    shutil.move(f"raw/{client_schema}/incoming/{file_name}", f"raw/{client_schema}/archive/{file_name}")
 
                 # Step 2: Validate Mapping
                 result = subprocess.run(["python", "scripts/validate_mapping.py", client_schema, json_file])
@@ -180,8 +180,8 @@ def process_client(client_schema, mode):
                     shutil.move(f"data/{client_schema}/incoming/{json_file}", f"data/{client_schema}/failed/{json_file}")
                     raise Exception("FAILED on load_to_bronze")
 
-                # Pindah JSON ke success
-                shutil.move(f"data/{client_schema}/incoming/{json_file}", f"data/{client_schema}/success/{json_file}")
+                # Pindah JSON ke archive
+                shutil.move(f"data/{client_schema}/incoming/{json_file}", f"data/{client_schema}/archive/{json_file}")
 
                 # ✅ Tambahkan ke list sukses
                 success_files.append(file_name)
@@ -197,8 +197,7 @@ def process_client(client_schema, mode):
             status=batch_status,
             batch_id=new_batch_id,
             error_message=batch_error_message,
-            start_time=batch_start,
-            client_schema=client_schema
+            start_time=batch_start
         )
 
         # ✅ Simpan file output sukses
