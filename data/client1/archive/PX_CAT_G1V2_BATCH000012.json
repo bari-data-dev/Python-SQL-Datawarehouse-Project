@@ -1,0 +1,372 @@
+[
+  {
+    "csv_row_number": 1,
+    "ID": "AC_BR",
+    "CAT": "Accessories",
+    "SUBCAT": "Bike Racks",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 2,
+    "ID": "AC_BS",
+    "CAT": "Accessories",
+    "SUBCAT": "Bike Stands",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 3,
+    "ID": "AC_BC",
+    "CAT": "Accessories",
+    "SUBCAT": "Bottles and Cages",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 4,
+    "ID": "AC_CL",
+    "CAT": "Accessories",
+    "SUBCAT": "Cleaners",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 5,
+    "ID": "AC_FE",
+    "CAT": "Accessories",
+    "SUBCAT": "Fenders",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 6,
+    "ID": "AC_HE",
+    "CAT": "Accessories",
+    "SUBCAT": "Helmets",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 7,
+    "ID": "AC_HP",
+    "CAT": "Accessories",
+    "SUBCAT": "Hydration Packs",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 8,
+    "ID": "AC_LI",
+    "CAT": "Accessories",
+    "SUBCAT": "Lights",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 9,
+    "ID": "AC_LO",
+    "CAT": "Accessories",
+    "SUBCAT": "Locks",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 10,
+    "ID": "AC_PA",
+    "CAT": "Accessories",
+    "SUBCAT": "Panniers",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 11,
+    "ID": "AC_PU",
+    "CAT": "Accessories",
+    "SUBCAT": "Pumps",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 12,
+    "ID": "AC_TT",
+    "CAT": "Accessories",
+    "SUBCAT": "Tires and Tubes",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 13,
+    "ID": "BI_MB",
+    "CAT": "Bikes",
+    "SUBCAT": "Mountain Bikes",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 14,
+    "ID": "BI_RB",
+    "CAT": "Bikes",
+    "SUBCAT": "Road Bikes",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 15,
+    "ID": "BI_TB",
+    "CAT": "Bikes",
+    "SUBCAT": "Touring Bikes",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 16,
+    "ID": "CL_BS",
+    "CAT": "Clothing",
+    "SUBCAT": "Bib-Shorts",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 17,
+    "ID": "CL_CA",
+    "CAT": "Clothing",
+    "SUBCAT": "Caps",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 18,
+    "ID": "CL_GL",
+    "CAT": "Clothing",
+    "SUBCAT": "Gloves",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 19,
+    "ID": "CL_JE",
+    "CAT": "Clothing",
+    "SUBCAT": "Jerseys",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 20,
+    "ID": "CL_SH",
+    "CAT": "Clothing",
+    "SUBCAT": "Shorts",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 21,
+    "ID": "CL_SO",
+    "CAT": "Clothing",
+    "SUBCAT": "Socks",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 22,
+    "ID": "CL_TI",
+    "CAT": "Clothing",
+    "SUBCAT": "Tights",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 23,
+    "ID": "CL_VE",
+    "CAT": "Clothing",
+    "SUBCAT": "Vests",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 24,
+    "ID": "CO_BB",
+    "CAT": "Components",
+    "SUBCAT": "Bottom Brackets",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 25,
+    "ID": "CO_BR",
+    "CAT": "Components",
+    "SUBCAT": "Brakes",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 26,
+    "ID": "CO_CH",
+    "CAT": "Components",
+    "SUBCAT": "Chains",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 27,
+    "ID": "CO_CS",
+    "CAT": "Components",
+    "SUBCAT": "Cranksets",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 28,
+    "ID": "CO_DE",
+    "CAT": "Components",
+    "SUBCAT": "Derailleurs",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 29,
+    "ID": "CO_FO",
+    "CAT": "Components",
+    "SUBCAT": "Forks",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 30,
+    "ID": "CO_HB",
+    "CAT": "Components",
+    "SUBCAT": "Handlebars",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 31,
+    "ID": "CO_HS",
+    "CAT": "Components",
+    "SUBCAT": "Headsets",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 32,
+    "ID": "CO_MF",
+    "CAT": "Components",
+    "SUBCAT": "Mountain Frames",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 33,
+    "ID": "CO_PD",
+    "CAT": "Components",
+    "SUBCAT": "Pedals",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 34,
+    "ID": "CO_RF",
+    "CAT": "Components",
+    "SUBCAT": "Road Frames",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 35,
+    "ID": "CO_SA",
+    "CAT": "Components",
+    "SUBCAT": "Saddles",
+    "MAINTENANCE": "No",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 36,
+    "ID": "CO_TF",
+    "CAT": "Components",
+    "SUBCAT": "Touring Frames",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  },
+  {
+    "csv_row_number": 37,
+    "ID": "CO_WH",
+    "CAT": "Components",
+    "SUBCAT": "Wheels",
+    "MAINTENANCE": "Yes",
+    "source_file": "PX_CAT_G1V2_BATCH000012.csv",
+    "logical_source_file": "px_cat_g1v2",
+    "batch_id": "BATCH000012"
+  }
+]
