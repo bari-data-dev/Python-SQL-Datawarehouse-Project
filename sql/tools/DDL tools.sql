@@ -138,18 +138,38 @@ CREATE TABLE IF NOT EXISTS tools.transformation_log
 
 CREATE TABLE tools.transformation_config (
     id BIGSERIAL PRIMARY KEY,
-    client_schema TEXT NOT NULL,                -- contoh: 'client1', 'client2'
-    transform_version VARCHAR(50) NOT NULL,     -- versi konfigurasi transformasi, fleksibel
+    client_schema TEXT NOT NULL,               -- contoh: 'client1', 'client2'
+    transform_version INT NOT NULL,            -- versi konfigurasi transformasi
     proc_name TEXT NOT NULL,                    -- contoh: 'tools.transform_orders_client1'
-    is_active BOOLEAN DEFAULT TRUE,             -- bisa nonaktifkan tanpa hapus
+    is_active BOOLEAN DEFAULT TRUE,             -- supaya bisa nonaktifkan tanpa hapus
     created_at TIMESTAMP DEFAULT NOW(),
     created_by TEXT DEFAULT current_user
 );
 
--- Index untuk mempercepat lookup
+-- Index untuk mempercepat lookup berdasarkan schema dan versi
 CREATE INDEX idx_transformation_config_schema_version
     ON tools.transformation_config (client_schema, transform_version);
 
+
+
+DO $$
+DECLARE
+    tbl RECORD;
+    col_name TEXT := 'dwh_batch_id';
+    col_type TEXT := 'VARCHAR(255)';
+BEGIN
+    FOR tbl IN
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'bronze'
+          AND table_type = 'BASE TABLE'
+    LOOP
+        EXECUTE format(
+            'ALTER TABLE bronze.%I ADD COLUMN IF NOT EXISTS %I %s;',
+            tbl.table_name, col_name, col_type
+        );
+    END LOOP;
+END$$;
 
 
 
