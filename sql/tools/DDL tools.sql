@@ -172,6 +172,30 @@ BEGIN
 END$$;
 
 
+CREATE TABLE "tools"."integration_config" ( 
+  "integration_id" SERIAL,
+  "client_id" INTEGER NOT NULL,
+  "proc_name" VARCHAR(255) NOT NULL,
+  "integration_version" VARCHAR(50) NOT NULL DEFAULT 'v1'::character varying ,
+  "is_active" BOOLEAN NOT NULL DEFAULT true ,
+  "created_at" TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ,
+  "created_by" VARCHAR(100) NULL DEFAULT 'system'::character varying ,
+  "table_type" VARCHAR(20) NULL,
+  "run_order" INTEGER NULL DEFAULT 0 ,
+  CONSTRAINT "integration_config_pkey" PRIMARY KEY ("integration_id")
+);
+
+
+CREATE TABLE "tools"."mv_refresh_config" ( 
+  "mv_id" SERIAL,
+  "client_id" INTEGER NOT NULL,
+  "mv_name" VARCHAR(255) NOT NULL,
+  "is_active" BOOLEAN NOT NULL DEFAULT true ,
+  "refresh_mode" VARCHAR(20) NULL DEFAULT 'manual'::character varying ,
+  "created_at" TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ,
+  "created_by" VARCHAR(100) NULL DEFAULT 'system'::character varying ,
+  CONSTRAINT "mv_refresh_config_pkey" PRIMARY KEY ("mv_id")
+);
 
 
 
