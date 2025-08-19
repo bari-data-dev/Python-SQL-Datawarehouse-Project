@@ -24,5 +24,25 @@
     "tools.load_dim_customers_v1",
     "tools.load_dim_products_v1",
     "tools.load_fact_sales_v1"
+  ],
+  "refresh_procedure": [
+    "mv_customer_lifetime_value",
+    "mv_customer_order_gap",
+    "mv_delayed_orders_chain",
+    "mv_running_sales_customer",
+    "mv_sales_customer_country",
+    "mv_sales_monthly_productline",
+    "mv_sales_rollup_product",
+    "mv_top3_products_month_country"
+  ],
+  "refresh_procedure_rerun1": [
+    "mv_customer_lifetime_value",
+    "mv_customer_order_gap",
+    "mv_delayed_orders_chain",
+    "mv_running_sales_customer",
+    "mv_sales_customer_country",
+    "mv_sales_monthly_productline",
+    "mv_sales_rollup_product",
+    "mv_top3_products_month_country"
   ]
 }
