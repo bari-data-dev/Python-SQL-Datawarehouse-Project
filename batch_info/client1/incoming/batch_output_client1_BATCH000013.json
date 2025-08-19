@@ -1,0 +1,28 @@
+{
+  "client_schema": "client1",
+  "batch_id": "BATCH000013",
+  "config_version": "v4",
+  "mapping_version": "v5",
+  "required_column_version": "v4",
+  "files": [
+    "CUST_AZ12_BATCH000013.csv",
+    "cust_info_BATCH000013.csv",
+    "LOC_A101_BATCH000013.csv",
+    "prd_info_BATCH000013.csv",
+    "PX_CAT_G1V2_BATCH000013.csv",
+    "sales_details_BATCH000013.csv"
+  ],
+  "transformation_procedure": [
+    "tools.load_crm_cust_info_v1",
+    "tools.load_crm_prd_info_v1",
+    "tools.load_crm_sales_details_v1",
+    "tools.load_erp_cust_az12_v1",
+    "tools.load_erp_loc_a101_v1",
+    "tools.load_erp_px_cat_g1v2_v1"
+  ],
+  "integration_procedure": [
+    "tools.load_dim_customers_v1",
+    "tools.load_dim_products_v1",
+    "tools.load_fact_sales_v1"
+  ]
+}
