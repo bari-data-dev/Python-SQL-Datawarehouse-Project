@@ -1,7 +1,11 @@
-CREATE PROCEDURE "tools"."load_crm_cust_info_v1"(IN p_client_schema VARCHAR, IN p_client_schema VARCHAR, IN p_batch_id VARCHAR, IN p_batch_id VARCHAR, OUT is_success BOOLEAN, IN p_client_id INTEGER, OUT error_message TEXT, OUT is_success BOOLEAN, OUT error_message TEXT) LANGUAGE PLPGSQL
-AS
-$$
-
+CREATE PROCEDURE tools.load_crm_cust_info_v1(
+    IN p_client_schema varchar,
+    IN p_batch_id varchar,
+    OUT is_success boolean,
+    OUT error_message text
+)
+LANGUAGE plpgsql
+AS $$
 DECLARE
     v_sql text;
     v_count int;
@@ -30,7 +34,7 @@ BEGIN
     INTO v_count;
 
     IF v_count = 0 THEN
-        is_success := true;
+        is_success := TRUE;
         error_message := NULL;
         RETURN;
     END IF;
@@ -45,7 +49,8 @@ BEGIN
     IF NOT FOUND THEN
         v_sql := format(
             'ALTER TABLE %I.%I ADD COLUMN dwh_batch_id varchar(30)',
-            'silver_client1', 'crm_cust_info'
+            'silver_client1',
+            'crm_cust_info'
         );
         EXECUTE v_sql;
     END IF;
@@ -57,13 +62,14 @@ BEGIN
     );
 
     -- 4. Insert data hasil transformasi
-    EXECUTE format($sql$
+    EXECUTE format(
+        $sql$
         INSERT INTO silver_client1.crm_cust_info (
-            cst_id, 
-            cst_key, 
-            cst_firstname, 
-            cst_lastname, 
-            cst_marital_status, 
+            cst_id,
+            cst_key,
+            cst_firstname,
+            cst_lastname,
+            cst_marital_status,
             cst_gndr,
             cst_create_date,
             dwh_batch_id
@@ -95,21 +101,34 @@ BEGIN
             %L
         FROM (
             SELECT *,
-                   ROW_NUMBER() OVER (PARTITION BY cst_id ORDER BY cst_create_date DESC) as flag_last
+                   ROW_NUMBER() OVER (
+                       PARTITION BY cst_id
+                       ORDER BY cst_create_date DESC
+                   ) AS flag_last
             FROM bronze_client1.crm_cust_info
             WHERE cst_id IS NOT NULL
               AND dwh_batch_id = %L
         ) t
-        WHERE flag_last = 1;
-    $sql$, p_batch_id, p_batch_id);
+        WHERE flag_last = 1
+        $sql$,
+        p_batch_id,
+        p_batch_id
+    );
 
     -- 5. Hitung jumlah record insert
     GET DIAGNOSTICS v_count = ROW_COUNT;
 
     -- 6. Insert log sukses
     INSERT INTO tools.transformation_log (
-        client_id, source_table, target_table, record_count, status, message, batch_id
-    ) VALUES (
+        client_id,
+        source_table,
+        target_table,
+        record_count,
+        status,
+        message,
+        batch_id
+    )
+    VALUES (
         v_client_id,
         'bronze_client1.crm_cust_info',
         'silver_client1.crm_cust_info',
@@ -119,14 +138,21 @@ BEGIN
         p_batch_id
     );
 
-    is_success := true;
+    is_success := TRUE;
     error_message := NULL;
 
 EXCEPTION
     WHEN OTHERS THEN
         INSERT INTO tools.transformation_log (
-            client_id, source_table, target_table, record_count, status, message, batch_id
-        ) VALUES (
+            client_id,
+            source_table,
+            target_table,
+            record_count,
+            status,
+            message,
+            batch_id
+        )
+        VALUES (
             v_client_id,
             'bronze_client1.crm_cust_info',
             'silver_client1.crm_cust_info',
@@ -135,8 +161,8 @@ EXCEPTION
             SQLERRM,
             p_batch_id
         );
-        is_success := false;
+
+        is_success := FALSE;
         error_message := SQLERRM;
 END;
-
-$$
+$$;
