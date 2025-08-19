@@ -1,10 +1,10 @@
-CREATE OR REPLACE PROCEDURE tools.load_erp_loc_a101_v1(
+CREATE OR REPLACE PROCEDURE tools.load_erp_loc_a101_v1 (
     IN p_client_schema character varying,
     IN p_batch_id character varying,
     OUT is_success boolean,
     OUT error_message text
 )
-LANGUAGE 'plpgsql'
+LANGUAGE plpgsql
 AS $BODY$
 DECLARE
     v_sql text;
@@ -85,8 +85,15 @@ BEGIN
 
     -- 6. Insert log sukses
     INSERT INTO tools.transformation_log (
-        client_id, source_table, target_table, record_count, status, message, batch_id
-    ) VALUES (
+        client_id,
+        source_table,
+        target_table,
+        record_count,
+        status,
+        message,
+        batch_id
+    )
+    VALUES (
         v_client_id,
         'bronze_client1.erp_loc_a101',
         'silver_client1.erp_loc_a101',
@@ -102,8 +109,15 @@ BEGIN
 EXCEPTION
     WHEN OTHERS THEN
         INSERT INTO tools.transformation_log (
-            client_id, source_table, target_table, record_count, status, message, batch_id
-        ) VALUES (
+            client_id,
+            source_table,
+            target_table,
+            record_count,
+            status,
+            message,
+            batch_id
+        )
+        VALUES (
             v_client_id,
             'bronze_client1.erp_loc_a101',
             'silver_client1.erp_loc_a101',
