@@ -1,15 +1,15 @@
-CREATE OR REPLACE PROCEDURE tools.load_crm_sales_details_v1(
-    IN p_client_schema character varying,
-    IN p_batch_id character varying,
-    OUT is_success boolean,
-    OUT error_message text
+CREATE OR REPLACE PROCEDURE tools.load_crm_sales_details_v1 (
+    IN  p_client_schema VARCHAR,
+    IN  p_batch_id      VARCHAR,
+    OUT is_success      BOOLEAN,
+    OUT error_message   TEXT
 )
-LANGUAGE 'plpgsql'
-AS $BODY$
+LANGUAGE plpgsql
+AS $$
 DECLARE
-    v_sql text;
-    v_count int;
-    v_client_id int;
+    v_sql       TEXT;
+    v_count     INT;
+    v_client_id INT;
 BEGIN
     -- Ambil client_id
     SELECT client_id
@@ -48,7 +48,7 @@ BEGIN
 
     IF NOT FOUND THEN
         v_sql := format(
-            'ALTER TABLE %I.%I ADD COLUMN dwh_batch_id varchar(30)',
+            'ALTER TABLE %I.%I ADD COLUMN dwh_batch_id VARCHAR(30)',
             'silver_client1', 'crm_sales_details'
         );
         EXECUTE v_sql;
@@ -80,29 +80,31 @@ BEGIN
             sls_cust_id,
             CASE
                 WHEN sls_order_dt = 0
-                OR LENGTH(sls_order_dt::text) != 8 THEN NULL
+                  OR LENGTH(sls_order_dt::TEXT) != 8 THEN NULL
                 ELSE CAST(CAST(sls_order_dt AS VARCHAR) AS DATE)
             END AS sls_order_dt,
             CASE
                 WHEN sls_ship_dt = 0
-                OR LENGTH(sls_ship_dt::text) != 8 THEN NULL
+                  OR LENGTH(sls_ship_dt::TEXT) != 8 THEN NULL
                 ELSE CAST(CAST(sls_ship_dt AS VARCHAR) AS DATE)
             END AS sls_ship_dt,
             CASE
                 WHEN sls_due_dt = 0
-                OR LENGTH(sls_due_dt::text) != 8 THEN NULL
+                  OR LENGTH(sls_due_dt::TEXT) != 8 THEN NULL
                 ELSE CAST(CAST(sls_due_dt AS VARCHAR) AS DATE)
             END AS sls_due_dt,
             CASE
                 WHEN sls_sales IS NULL
-                OR sls_sales <= 0
-                OR sls_sales != sls_quantity * ABS(sls_price) THEN sls_quantity * ABS(sls_price)
+                  OR sls_sales <= 0
+                  OR sls_sales != sls_quantity * ABS(sls_price)
+                    THEN sls_quantity * ABS(sls_price)
                 ELSE sls_sales
             END AS sls_sales,
             sls_quantity,
             CASE
                 WHEN sls_price IS NULL
-                OR sls_price <= 0 THEN ABS(sls_sales) / NULLIF(sls_quantity, 0)
+                  OR sls_price <= 0
+                    THEN ABS(sls_sales) / NULLIF(sls_quantity, 0)
                 ELSE sls_price
             END AS sls_price,
             %L
@@ -115,7 +117,13 @@ BEGIN
 
     -- 6. Insert log sukses
     INSERT INTO tools.transformation_log (
-        client_id, source_table, target_table, record_count, status, message, batch_id
+        client_id,
+        source_table,
+        target_table,
+        record_count,
+        status,
+        message,
+        batch_id
     ) VALUES (
         v_client_id,
         'bronze_client1.crm_sales_details',
@@ -132,7 +140,13 @@ BEGIN
 EXCEPTION
     WHEN OTHERS THEN
         INSERT INTO tools.transformation_log (
-            client_id, source_table, target_table, record_count, status, message, batch_id
+            client_id,
+            source_table,
+            target_table,
+            record_count,
+            status,
+            message,
+            batch_id
         ) VALUES (
             v_client_id,
             'bronze_client1.crm_sales_details',
@@ -145,7 +159,7 @@ EXCEPTION
         is_success := false;
         error_message := SQLERRM;
 END;
-$BODY$;
+$$;
 
-ALTER PROCEDURE tools.load_crm_sales_details_v1(character varying, character varying)
+ALTER PROCEDURE tools.load_crm_sales_details_v1 (VARCHAR, VARCHAR)
     OWNER TO postgres;
