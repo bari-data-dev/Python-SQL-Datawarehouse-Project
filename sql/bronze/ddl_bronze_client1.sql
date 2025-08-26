@@ -19,7 +19,7 @@ CREATE TABLE bronze_client1.crm_prd_info (
     prd_id       INTEGER,
     prd_key      VARCHAR(50),
     prd_nm       VARCHAR(50),
-    prd_cost     INTEGER,
+    prd_cost     NUMERIC(10,5),
     prd_line     VARCHAR(50),
     prd_start_dt TIMESTAMP,
     prd_end_dt   TIMESTAMP
@@ -34,9 +34,9 @@ CREATE TABLE bronze_client1.crm_sales_details (
     sls_order_dt  INTEGER,   -- Jika bentuknya integer timestamp (epoch), bisa diubah nanti
     sls_ship_dt   INTEGER,
     sls_due_dt    INTEGER,
-    sls_sales     INTEGER,
+    sls_sales     NUMERIC(10,5),
     sls_quantity  INTEGER,
-    sls_price     INTEGER
+    sls_price     NUMERIC(10,5)
 );
 
 -- Tabel ERP: Lokasi
@@ -62,23 +62,3 @@ CREATE TABLE bronze_client1.erp_px_cat_g1v2 (
     subcat       VARCHAR(50),
     maintenance  VARCHAR(50)
 );
-
-
-DO $$
-DECLARE
-    tbl RECORD;
-    col_name TEXT := 'dwh_batch_id';
-    col_type TEXT := 'VARCHAR(30)';
-BEGIN
-    FOR tbl IN
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'bronze'
-          AND table_type = 'BASE TABLE'
-    LOOP
-        EXECUTE format(
-            'ALTER TABLE bronze.%I ADD COLUMN IF NOT EXISTS %I %s;',
-            tbl.table_name, col_name, col_type
-        );
-    END LOOP;
-END$$;
