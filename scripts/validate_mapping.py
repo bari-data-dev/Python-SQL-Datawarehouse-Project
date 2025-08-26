@@ -1,269 +1,601 @@
+#!/usr/bin/env python3
 import os
 import sys
+import re
+import json
+import shutil
 import psycopg2
+import pyarrow.parquet as pq
+import gc
+import time
+import traceback
 from datetime import datetime
 from dotenv import load_dotenv
 
-import pyarrow.parquet as pq
-import pyarrow.dataset as ds
-
-# ---------------------- #
-# 🔧 Config DB           #
-# ---------------------- #
+# load environment variables
 load_dotenv()
 
-db_port = os.getenv("DB_PORT")
-if db_port is None:
+# -----------------------------
+# DB config via dotenv
+# -----------------------------
+DB_PORT = os.getenv("DB_PORT")
+if DB_PORT is None:
     raise ValueError("DB_PORT not set in .env")
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
-    "port": int(db_port),
+    "port": int(DB_PORT),
     "dbname": os.getenv("DB_NAME"),
     "user": os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
 }
 
-# ---------------------- #
-# 🧠 Helper Functions    #
-# ---------------------- #
 
-def get_client_id(client_schema):
-    """Resolve client_schema to client_id."""
-    conn = psycopg2.connect(**DB_CONFIG)
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT client_id
-        FROM tools.client_reference
-        WHERE client_schema = %s
-    """, (client_schema,))
-    result = cur.fetchone()
-    cur.close()
-    conn.close()
-    return result[0] if result else None
-
-
-def get_mapping_version(client_id):
-    conn = psycopg2.connect(**DB_CONFIG)
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT mapping_version
-        FROM tools.client_reference
-        WHERE client_id = %s
-    """, (client_id,))
-    result = cur.fetchone()
-    cur.close()
-    conn.close()
-    return result[0] if result else None
-
-
-def get_column_mapping(client_id, mapping_version, logical_source_file):
-    conn = psycopg2.connect(**DB_CONFIG)
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT source_column
-        FROM tools.column_mapping
-        WHERE client_id = %s
-          AND mapping_version = %s
-          AND logical_source_file = %s
-    """, (client_id, mapping_version, logical_source_file))
-    result = cur.fetchall()
-    cur.close()
-    conn.close()
-    return {r[0] for r in result}
-
-
-def update_file_audit_log(client_id, data_file_name, status, batch_id):
+# -----------------------------
+# Helpers
+# -----------------------------
+def get_connection():
     """
-    NOTE: tetap pakai kolom `parquet_file_name` agar kompatibel dengan skema eksisting.
-    Kita isi dengan nama file parquet.
+    Use DB_CONFIG (loaded from .env) to create a psycopg2 connection.
     """
-    conn = psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(**DB_CONFIG)
+
+
+def extract_batch_id(filename: str):
+    m = re.search(r"(BATCH\d{6})", filename, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+    return None
+
+
+def normalize_name(s: str):
+    if s is None:
+        return ""
+    s = str(s)
+    base = s.strip()
+    base = base.lower()
+    base = base.replace(" ", "_")
+    base = base.replace("-", "_")
+    return base
+
+
+def find_file_entry(batch_info: dict, physical_file_name: str):
+    for f in batch_info.get("files", []):
+        if f.get("physical_file_name") == physical_file_name:
+            return f
+    return None
+
+
+def safe_move(src: str, dst: str, retries: int = 5, retry_delay: float = 0.25):
+    """
+    Robust move:
+      - Try os.replace (atomic on same filesystem).
+      - If that fails (cross-device or other), fallback to copy2 + remove with retries.
+    Returns True on success, False on failure.
+    """
+    try:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        try:
+            os.replace(src, dst)
+            return True
+        except Exception:
+            # fallback to copy2 + remove
+            shutil.copy2(src, dst)
+            for i in range(retries):
+                try:
+                    os.remove(src)
+                    return True
+                except Exception as e:
+                    if i < retries - 1:
+                        time.sleep(retry_delay)
+                    else:
+                        print(
+                            f"⚠️ safe_move: failed to remove source after copy: {src} -> {dst}: {e}"
+                        )
+                        traceback.print_exc()
+                        return False
+    except Exception as e:
+        print(f"⚠️ safe_move: unexpected error moving {src} -> {dst}: {e}")
+        traceback.print_exc()
+        return False
+
+
+def move_parquet_to_failed(parquet_path: str, client_schema: str, source_system: str):
+    """
+    Move parquet file to data/<client_schema>/<source_system>/failed/
+    - create directory if missing
+    - replace existing file if present
+    - logs exceptions (no longer silent)
+    """
+    try:
+        if not parquet_path or not os.path.exists(parquet_path):
+            return
+        failed_dir = os.path.join("data", client_schema, source_system, "failed")
+        os.makedirs(failed_dir, exist_ok=True)
+        dest = os.path.join(failed_dir, os.path.basename(parquet_path))
+        if os.path.exists(dest):
+            try:
+                os.remove(dest)
+            except Exception as e:
+                print(
+                    f"⚠️ move_parquet_to_failed: cannot remove existing dest {dest}: {e}"
+                )
+                traceback.print_exc()
+        ok = safe_move(parquet_path, dest)
+        if not ok:
+            print(f"⚠️ move_parquet_to_failed: move failed for {parquet_path} -> {dest}")
+    except Exception as e:
+        print(f"⚠️ move_parquet_to_failed: unexpected error for {parquet_path}: {e}")
+        traceback.print_exc()
+
+
+# DB operations
+def get_column_mapping_columns(
+    cur, client_id, logical_source_file, source_system, source_type
+):
+    # Retrieve active mapping rows for the client and logical_source_file.
+    sql = (
+        "SELECT source_column FROM tools.column_mapping "
+        "WHERE client_id = %s "
+        "AND logical_source_file = %s "
+        "AND is_active = true "
+        "AND source_system = %s "
+        "AND source_type = %s "
+        "ORDER BY mapping_id"
+    )
+    cur.execute(sql, (client_id, logical_source_file, source_system, source_type))
+    rows = cur.fetchall()
+    return [r[0] for r in rows]
+
+
+def update_file_audit_mapping_status(
+    conn,
+    client_id,
+    physical_file_name,
+    source_system,
+    source_type,
+    logical_source_file,
+    batch_id,
+    status,
+):
     cur = conn.cursor()
-    cur.execute("""
-        UPDATE tools.file_audit_log
-        SET mapping_validation_status = %s
-        WHERE client_id = %s
-          AND parquet_file_name = %s
-          AND batch_id = %s
-    """, (status, client_id, data_file_name, batch_id))
+    sql = (
+        "UPDATE tools.file_audit_log SET mapping_validation_status = %s "
+        "WHERE client_id = %s AND physical_file_name = %s AND source_system = %s "
+        "AND source_type = %s AND logical_source_file = %s AND batch_id = %s"
+    )
+    cur.execute(
+        sql,
+        (
+            status,
+            client_id,
+            physical_file_name,
+            source_system,
+            source_type,
+            logical_source_file,
+            batch_id,
+        ),
+    )
     affected = cur.rowcount
     conn.commit()
     cur.close()
-    conn.close()
-    return affected > 0
+    return affected
 
 
-def insert_validation_log(client_id, expected, received, missing, extra, data_file_name, batch_id):
-    conn = psycopg2.connect(**DB_CONFIG)
+def insert_job_execution_log(
+    conn,
+    client_id,
+    job_name,
+    status,
+    error_message,
+    file_name,
+    batch_id,
+    start_time,
+    end_time,
+):
     cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO tools.mapping_validation_log(
-            client_id, expected_columns, received_columns,
-            missing_columns, extra_columns, file_name, batch_id
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """, (
-        client_id,
-        ", ".join(sorted(expected)),
-        ", ".join(sorted(received)),
-        ", ".join(sorted(missing)),
-        ", ".join(sorted(extra)),
-        data_file_name,
-        batch_id
-    ))
+    sql = (
+        "INSERT INTO tools.job_execution_log "
+        "(client_id, job_name, status, error_message, file_name, batch_id, start_time, end_time) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+    )
+    cur.execute(
+        sql,
+        (
+            client_id,
+            job_name,
+            status,
+            error_message,
+            file_name,
+            batch_id,
+            start_time,
+            end_time,
+        ),
+    )
     conn.commit()
     cur.close()
-    conn.close()
 
 
-def insert_job_log(job_name, client_id, data_file_name, status, start_time, end_time, error_message=None, batch_id=None):
-    conn = psycopg2.connect(**DB_CONFIG)
+def insert_mapping_validation_log(
+    conn, client_id, missing, extra, expected, received, file_name, batch_id
+):
     cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO tools.job_execution_log(
-            job_name, client_id, file_name, status,
-            start_time, end_time, error_message, batch_id
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-    """, (
-        job_name, client_id, data_file_name,
-        status, start_time, end_time, error_message, batch_id
-    ))
+    sql = (
+        "INSERT INTO tools.mapping_validation_log "
+        "(client_id, missing_columns, extra_columns, expected_columns, received_columns, file_name, batch_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+    )
+    cur.execute(
+        sql,
+        (
+            client_id,
+            missing,
+            extra,
+            expected,
+            received,
+            file_name,
+            batch_id,
+        ),
+    )
     conn.commit()
     cur.close()
-    conn.close()
 
-# ---------------------- #
-# 🎯 Validation Logic    #
-# ---------------------- #
 
-def validate_parquet_keys(client_schema, parquet_file_name):
-    """
-    Validasi kesesuaian set kolom pada file PARQUET vs column_mapping.
-    - Tidak load seluruh data: baca schema Parquet + head(1) untuk metadata.
-    - Tetap exclude kolom metadata: csv_row_number, source_file, logical_source_file, batch_id.
-    - Logging & audit: kompatibel dengan skema lama (kolom parquet_file_name diisi nama parquet).
-    """
-    start_time = datetime.now()
-    job_name = os.path.basename(__file__)
-    status = "SUCCESS"
-    error_message = None
-    batch_id = None
-
-    # Resolve client_id
-    client_id = get_client_id(client_schema)
-    if not client_id:
-        print(f"❌ client_schema '{client_schema}' not found in client_reference")
-        return False
-
-    parquet_path = os.path.join("data", client_schema, "incoming", parquet_file_name)
-
-    if not os.path.exists(parquet_path):
-        status = "FAILED"
-        error_message = f"File not found: {parquet_path}"
-        insert_job_log(job_name, client_id, parquet_file_name, status, start_time, datetime.now(), error_message)
-        print(f"❌ {error_message}")
-        return False
-
-    try:
-        # 1) Ambil schema kolom tanpa baca data penuh (super hemat memori)
-        pf = pq.ParquetFile(parquet_path)
-        all_cols = set(pf.schema.names)
-
-        # 2) Ambil metadata minimal: logical_source_file & batch_id dari satu baris saja
-        dset = ds.dataset(parquet_path, format="parquet")
-        meta_table = dset.head(1, columns=["logical_source_file", "batch_id"])
-        if meta_table.num_rows == 0:
-            status = "FAILED"
-            error_message = "Parquet file has no rows"
-            insert_job_log(job_name, client_id, parquet_file_name, status, start_time, datetime.now(), error_message)
-            print(f"❌ {error_message}")
-            return False
-
-        # Konversi ke Python scalar
-        try:
-            logical_source_file = meta_table.column("logical_source_file")[0].as_py()
-        except KeyError:
-            logical_source_file = None
-        try:
-            batch_id = meta_table.column("batch_id")[0].as_py()
-        except KeyError:
-            batch_id = None
-
-        if not logical_source_file:
-            status = "FAILED"
-            error_message = "logical_source_file not found in Parquet columns/metadata"
-            insert_job_log(job_name, client_id, parquet_file_name, status, start_time, datetime.now(), error_message, batch_id)
-            print(f"❌ {error_message}")
-            return False
-
-        if not batch_id:
-            status = "FAILED"
-            error_message = "batch_id not found in Parquet columns/metadata"
-            insert_job_log(job_name, client_id, parquet_file_name, status, start_time, datetime.now(), error_message)
-            print(f"❌ {error_message}")
-            return False
-
-        # 3) Exclude kolom metadata
-        metadata_cols = {"csv_row_number", "source_file", "logical_source_file", "batch_id"}
-        parquet_keys = all_cols - metadata_cols
-
-        # 4) Ambil mapping keys dari DB
-        mapping_version = get_mapping_version(client_id)
-        if not mapping_version:
-            status = "FAILED"
-            error_message = f"No mapping_version found for client_id '{client_id}'"
-            insert_job_log(job_name, client_id, parquet_file_name, status, start_time, datetime.now(), error_message, batch_id)
-            print(f"❌ {error_message}")
-            return False
-
-        mapping_keys = get_column_mapping(client_id, mapping_version, logical_source_file)
-
-        missing = mapping_keys - parquet_keys
-        extra = parquet_keys - mapping_keys
-
-        if missing or extra:
-            status = "FAILED"
-            error_message = f"Missing: {missing}, Extra: {extra}"
-            insert_validation_log(client_id, mapping_keys, parquet_keys, missing, extra, parquet_file_name, batch_id)
-            update_success = update_file_audit_log(client_id, parquet_file_name, "FAILED", batch_id)
-
-            if not update_success:
-                error_message += " | file_audit_log record not found"
-
-            insert_job_log(job_name, client_id, parquet_file_name, status, start_time, datetime.now(), error_message, batch_id)
-            print("❌ Validation failed. Logged to DB.")
-            return False
-
-        # 5) Sukses
-        update_file_audit_log(client_id, parquet_file_name, "SUCCESS", batch_id)
-        insert_job_log(job_name, client_id, parquet_file_name, status, start_time, datetime.now(), None, batch_id)
-        print("✅ Validation passed: Parquet schema matches column mapping.")
-        return True
-
-    except Exception as e:
-        status = "FAILED"
-        error_message = f"Unhandled error: {e}"
-        insert_job_log(job_name, client_id, parquet_file_name, status, start_time, datetime.now(), error_message, batch_id)
-        print(f"❌ {error_message}")
-        return False
-
-# ---------------------- #
-# 🚀 Main Entry Point    #
-# ---------------------- #
-
-if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python validate_mapping_parquet.py <client_schema> <parquet_file_name>")
-        sys.exit(1)
+# -----------------------------
+# Main
+# -----------------------------
+def main():
+    if len(sys.argv) != 3:
+        print("Usage: python validate_mapping.py <client_schema> <physical_file_name>")
+        sys.exit(2)
 
     client_schema = sys.argv[1]
-    parquet_file_name = sys.argv[2]
+    physical_file_name = sys.argv[2]
+    start_time = datetime.now()
+    job_name = "Mapping Validation"
 
-    print(f"🔍 Validating (Parquet) {parquet_file_name} for client schema '{client_schema}'...\n")
+    # <<< ensure pf exists in all branches by initializing early >>>
+    pf = None
 
-    if not validate_parquet_keys(client_schema, parquet_file_name):
-        print("🛑 STOP: Loading to bronze is blocked due to mapping mismatch.")
+    # extract batch id
+    batch_id = extract_batch_id(physical_file_name)
+    if not batch_id:
+        print(f"❌ Cannot extract batch_id from file name: {physical_file_name}")
         sys.exit(1)
-    else:
-        print("✅ PROCEED: Ready for bronze layer load.")
-        sys.exit(0)
+
+    batch_info_path = os.path.join(
+        "batch_info",
+        client_schema,
+        "incoming",
+        f"batch_output_{client_schema}_{batch_id}.json",
+    )
+    if not os.path.exists(batch_info_path):
+        print(f"❌ Batch info not found: {batch_info_path}")
+        sys.exit(1)
+
+    with open(batch_info_path, "r") as bf:
+        try:
+            batch_info = json.load(bf)
+        except Exception as e:
+            print(f"❌ Failed to parse batch_info: {e}")
+            traceback.print_exc()
+            sys.exit(1)
+
+    file_entry = find_file_entry(batch_info, physical_file_name)
+    if not file_entry:
+        print(
+            f"❌ File {physical_file_name} not found inside batch_info {batch_info_path}"
+        )
+        sys.exit(1)
+
+    parquet_name = file_entry.get("parquet_name")
+    logical_source_file = file_entry.get("logical_source_file")
+    source_system = (file_entry.get("source_system") or "").lower()
+    source_type = (file_entry.get("source_type") or "").lower()
+    client_id = batch_info.get("client_id")
+
+    if client_id is None:
+        print(f"❌ client_id not found in batch_info {batch_info_path}")
+        sys.exit(1)
+
+    if not parquet_name:
+        print(
+            f"❌ parquet_name not present in batch_info for file {physical_file_name}. Has convert step run?"
+        )
+        # log failed job
+        try:
+            conn = get_connection()
+            insert_job_execution_log(
+                conn,
+                client_id,
+                job_name,
+                "FAILED",
+                "parquet_name_missing",
+                physical_file_name,
+                batch_id,
+                start_time,
+                datetime.now(),
+            )
+            # attempt to move parquet if path available (best-effort)
+            parquet_path = os.path.join(
+                "data",
+                client_schema,
+                (file_entry.get("source_system") or "").lower(),
+                "incoming",
+                parquet_name or "",
+            )
+            # ensure any pyarrow handles released (best-effort) before move
+            try:
+                if pf is not None:
+                    pf = None
+                gc.collect()
+            except Exception:
+                pass
+            move_parquet_to_failed(parquet_path, client_schema, source_system)
+            conn.close()
+        except Exception:
+            pass
+        sys.exit(1)
+
+    parquet_path = os.path.join(
+        "data", client_schema, source_system, "incoming", parquet_name
+    )
+    if not os.path.exists(parquet_path):
+        print(f"❌ Parquet not found: {parquet_path}")
+        try:
+            conn = get_connection()
+            insert_job_execution_log(
+                conn,
+                client_id,
+                job_name,
+                "FAILED",
+                f"parquet_missing:{parquet_path}",
+                physical_file_name,
+                batch_id,
+                start_time,
+                datetime.now(),
+            )
+            # cannot move because file missing
+            conn.close()
+        except Exception:
+            pass
+        sys.exit(1)
+
+    # read parquet schema
+    try:
+        pf = pq.ParquetFile(parquet_path)
+        parquet_cols = set(pf.schema.names)
+    except Exception as e:
+        print(f"❌ Failed to read parquet schema: {e}")
+        traceback.print_exc()
+        try:
+            conn = get_connection()
+            insert_job_execution_log(
+                conn,
+                client_id,
+                job_name,
+                "FAILED",
+                f"parquet_read_error:{e}",
+                physical_file_name,
+                batch_id,
+                start_time,
+                datetime.now(),
+            )
+            # move file to failed (best-effort) — release pf first
+            try:
+                if pf is not None:
+                    pf = None
+                gc.collect()
+            except Exception:
+                pass
+            move_parquet_to_failed(parquet_path, client_schema, source_system)
+            conn.close()
+        except Exception:
+            pass
+        sys.exit(1)
+
+    # normalize parquet column names
+    normalized_parquet_cols = set([normalize_name(c) for c in parquet_cols])
+
+    # fetch mapping from DB
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        mapping_cols = get_column_mapping_columns(
+            cur, client_id, logical_source_file, source_system, source_type
+        )
+        cur.close()
+    except Exception as e:
+        print(f"❌ Failed to fetch column mapping from DB: {e}")
+        traceback.print_exc()
+        try:
+            if conn:
+                insert_job_execution_log(
+                    conn,
+                    client_id,
+                    job_name,
+                    "FAILED",
+                    f"db_error:{e}",
+                    physical_file_name,
+                    batch_id,
+                    start_time,
+                    datetime.now(),
+                )
+                # do NOT move parquet here — DB errors may be transient; but release pf if planning to move
+                try:
+                    if pf is not None:
+                        pf = None
+                    gc.collect()
+                except Exception:
+                    pass
+                conn.close()
+        except Exception:
+            pass
+        sys.exit(1)
+
+    if not mapping_cols:
+        # no mapping found
+        print("❌ Column Mapping Not Found")
+        try:
+            insert_mapping_validation_log(
+                conn, client_id, "", "", "", "", physical_file_name, batch_id
+            )
+            insert_job_execution_log(
+                conn,
+                client_id,
+                job_name,
+                "FAILED",
+                "Column Mapping Not Found",
+                physical_file_name,
+                batch_id,
+                start_time,
+                datetime.now(),
+            )
+            # update file_audit_log as FAILED
+            try:
+                update_file_audit_mapping_status(
+                    conn,
+                    client_id,
+                    physical_file_name,
+                    source_system,
+                    source_type,
+                    logical_source_file,
+                    batch_id,
+                    "FAILED",
+                )
+            except Exception:
+                pass
+            # move parquet to failed
+            try:
+                if pf is not None:
+                    pf = None
+                gc.collect()
+            except Exception:
+                pass
+            move_parquet_to_failed(parquet_path, client_schema, source_system)
+            conn.close()
+        except Exception:
+            pass
+        sys.exit(1)
+
+    normalized_mapping_cols = set([normalize_name(c) for c in mapping_cols])
+
+    # Compare sets
+    missing = sorted(list(normalized_mapping_cols - normalized_parquet_cols))
+    extra = sorted(list(normalized_parquet_cols - normalized_mapping_cols))
+
+    # Build comma-separated strings
+    expected_csv = ",".join(sorted(normalized_mapping_cols))
+    received_csv = ",".join(sorted(normalized_parquet_cols))
+    missing_csv = ",".join(missing) if missing else ""
+    extra_csv = ",".join(extra) if extra else ""
+
+    if missing or extra:
+        status = "FAILED"
+        error_message = f"Missing: {missing_csv}; Extra: {extra_csv}"
+        print("❌ Validation failed:", error_message)
+        try:
+            insert_mapping_validation_log(
+                conn,
+                client_id,
+                missing_csv,
+                extra_csv,
+                expected_csv,
+                received_csv,
+                parquet_name,
+                batch_id,
+            )
+        except Exception as e:
+            print(f"⚠️ Failed to insert mapping_validation_log: {e}")
+            traceback.print_exc()
+        try:
+            affected = update_file_audit_mapping_status(
+                conn,
+                client_id,
+                physical_file_name,
+                source_system,
+                source_type,
+                logical_source_file,
+                batch_id,
+                "FAILED",
+            )
+            if affected == 0:
+                print(
+                    "⚠️ Warning: file_audit_log update affected 0 rows (no exact match)."
+                )
+        except Exception as e:
+            print(f"⚠️ Failed to update file_audit_log: {e}")
+            traceback.print_exc()
+        try:
+            insert_job_execution_log(
+                conn,
+                client_id,
+                job_name,
+                status,
+                error_message,
+                physical_file_name,
+                batch_id,
+                start_time,
+                datetime.now(),
+            )
+        except Exception as e:
+            print(f"⚠️ Failed to insert job_execution_log: {e}")
+            traceback.print_exc()
+        # move parquet to failed (replace if exists)
+        try:
+            if pf is not None:
+                pf = None
+            gc.collect()
+        except Exception:
+            pass
+        try:
+            move_parquet_to_failed(parquet_path, client_schema, source_system)
+        except Exception:
+            pass
+        conn.close()
+        sys.exit(1)
+
+    # success
+    try:
+        affected = update_file_audit_mapping_status(
+            conn,
+            client_id,
+            physical_file_name,
+            source_system,
+            source_type,
+            logical_source_file,
+            batch_id,
+            "SUCCESS",
+        )
+        if affected == 0:
+            print("⚠️ Warning: file_audit_log update affected 0 rows (no exact match).")
+    except Exception as e:
+        print(f"⚠️ Failed to update file_audit_log: {e}")
+
+    try:
+        insert_job_execution_log(
+            conn,
+            client_id,
+            job_name,
+            "SUCCESS",
+            None,
+            parquet_name,
+            batch_id,
+            start_time,
+            datetime.now(),
+        )
+    except Exception as e:
+        print(f"⚠️ Failed to insert job_execution_log: {e}")
+
+    # close connection
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+    print("✅ Validation passed: Parquet schema matches column mapping.")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
