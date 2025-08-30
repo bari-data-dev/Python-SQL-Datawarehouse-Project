@@ -76,6 +76,7 @@ BEGIN
         FROM silver_client1.crm_prd_info po
         LEFT JOIN silver_client1.erp_px_cat_g1v2 pc
                ON po.cat_id = pc.id
+               AND po.dwh_batch_id = pc.dwh_batch_id
         WHERE po.prd_end_dt IS NULL
           AND po.dwh_batch_id = %L;
     $sql$, p_batch_id, p_batch_id);
