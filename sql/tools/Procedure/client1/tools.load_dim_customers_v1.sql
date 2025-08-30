@@ -77,8 +77,10 @@ BEGIN
         FROM silver_client1.crm_cust_info ci
         LEFT JOIN silver_client1.erp_cust_az12 ca
                ON ci.cst_key = ca.cid
+               AND ci.dwh_batch_id = ca.dwh_batch_id
         LEFT JOIN silver_client1.erp_loc_a101 la
                ON ci.cst_key = la.cid
+               AND ci.dwh_batch_id = la.dwh_batch_id
         WHERE ci.dwh_batch_id = %L;
     $sql$, p_batch_id, p_batch_id);
 
