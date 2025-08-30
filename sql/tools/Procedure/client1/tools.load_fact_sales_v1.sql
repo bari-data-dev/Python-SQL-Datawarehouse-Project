@@ -74,8 +74,10 @@ BEGIN
         FROM silver_client1.crm_sales_details sd
         LEFT JOIN gold_client1.dim_products pr
                ON sd.sls_prd_key = pr.product_number
+               AND sd.dwh_batch_id = pr.dwh_batch_id
         LEFT JOIN gold_client1.dim_customers cs
                ON sd.sls_cust_id = cs.customer_id
+               AND sd.dwh_batch_id = cs.dwh_batch_id
         WHERE sd.dwh_batch_id = %L;
     $sql$, p_batch_id, p_batch_id);
 
