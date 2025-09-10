@@ -206,7 +206,7 @@ python batch_processing.py client1 reprocessing
 
 ---
 
-## 12. Limitasi / Technical Debt (Catatan untuk Supervisor)
+## 12. Limitasi / Technical Debt
 
 * Local FS single‑node → durability & concurrency risk.
 * Secrets di `.env` (plaintext) — butuh vault atau K/V secure.
