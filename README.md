@@ -141,9 +141,6 @@ Stored procedures menulis ke masing‑masing log table sebagai bagian dari kontr
       "target_table": "crm_cust_info",
       "source_config": null,
       "parquet_name": "cust_info_BATCH000014.parquet",
-      "client_schema": "client1",
-      "client_id": 2,
-      "batch_id": "BATCH000014"
     }
   ],
   "transformation_procedure": [
